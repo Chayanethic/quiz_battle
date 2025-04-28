@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0mu4tTBqT0e5yDq6zO0p">
     <title>Quiz Battle</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -11,7 +11,7 @@
     <div class="container">
         <header>
             <h1>Quiz Battle</h1>
-            <p class="app-description">A real-time quiz battle game. Just add a topic, create a quiz, and share with your friends to play an exciting real-time quiz battle!</p>
+            <p class="app-description">A real-time quiz battle game with live chat. Create or join a quiz and compete with friends!</p>
         </header>
         
         <main>
@@ -69,6 +69,14 @@
                     <h3>Players:</h3>
                     <ul id="connected-players"></ul>
                 </div>
+                <div class="chat-container">
+                    <h3>Chat</h3>
+                    <div id="chat-messages-waiting" class="chat-messages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chat-input-waiting" placeholder="Type a message...">
+                        <button id="send-chat-waiting" class="chat-send-btn">Send</button>
+                    </div>
+                </div>
                 <button id="start-game-btn" class="btn">Start Game</button>
                 <button id="cancel-game-btn" class="btn">Cancel</button>
             </div>
@@ -95,6 +103,14 @@
                     <h3>Live Scores</h3>
                     <ul id="live-player-scores"></ul>
                 </div>
+                <div class="chat-container">
+                    <h3>Chat</h3>
+                    <div id="chat-messages" class="chat-messages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chat-input" placeholder="Type a message...">
+                        <button id="send-chat" class="chat-send-btn">Send</button>
+                    </div>
+                </div>
             </div>
 
             <div id="results-screen" class="screen">
@@ -106,7 +122,7 @@
         </main>
         
         <footer>
-            <p>&copy; 2025 by Team Alpha. All rights reserved.</p>
+            <p>© 2025 by Team Alpha. All rights reserved.</p>
             <p>Visit our main website: <a href="https://smartQai.vercel.app" target="_blank" rel="noopener">smartQai.vercel.app</a></p>
         </footer>
     </div>
@@ -116,4 +132,4 @@
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     <script src="script.js"></script>
 </body>
-</html> 
+</html>
