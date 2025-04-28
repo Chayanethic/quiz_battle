@@ -38,6 +38,16 @@ document.getElementById('home-btn').addEventListener('click', () => showScreen('
 document.getElementById('copy-code-btn').addEventListener('click', copyRoomCode);
 document.getElementById('copy-url-btn').addEventListener('click', copyShareUrl);
 
+// Chat buttons
+document.getElementById('send-chat').addEventListener('click', sendChatMessage);
+document.getElementById('send-chat-waiting').addEventListener('click', sendChatMessage);
+document.getElementById('chat-input').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendChatMessage();
+});
+document.getElementById('chat-input-waiting').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendChatMessage();
+});
+
 // Game state
 let currentQuestionTimer;
 let playerName = '';
@@ -47,25 +57,24 @@ let currentRoomCode = '';
 let allPlayers = [];
 let serverTimeOffset = 0;
 let questionStartTime = 0;
-let questionDuration = 30; // Changed from 20 to 30 seconds
+let questionDuration = 30;
 
 // Show a specific screen
 function showScreen(screenName) {
-    // Hide all screens
     Object.values(screens).forEach(screen => {
         screen.classList.remove('active');
     });
-    
-    // Show the requested screen
     screens[screenName].classList.add('active');
-    
-    // Clear any active timers when changing screens
     if (currentQuestionTimer) {
         clearInterval(currentQuestionTimer);
     }
-    
     if (timerInterval) {
         clearInterval(timerInterval);
+    }
+    // Clear chat messages when leaving quiz or waiting screen
+    if (screenName !== 'quiz' && screenName !== 'waiting') {
+        document.getElementById('chat-messages').innerHTML = '';
+        document.getElementById('chat-messages-waiting').innerHTML = '';
     }
 }
 
@@ -85,11 +94,9 @@ function createQuiz() {
         return;
     }
     
-    // Show loading state
     document.getElementById('generate-quiz-btn').textContent = 'Generating...';
     document.getElementById('generate-quiz-btn').disabled = true;
     
-    // Send request to create room
     socket.emit('create-room', {
         topic,
         numQuestions,
@@ -99,7 +106,6 @@ function createQuiz() {
 
 // Join an existing quiz
 function joinQuiz() {
-    // Check if we have a room code in the URL
     const urlParams = new URLSearchParams(window.location.search);
     let roomCode = urlParams.get('room');
     
@@ -121,7 +127,6 @@ function joinQuiz() {
         return;
     }
     
-    // Send request to join room
     socket.emit('join-room', {
         roomCode,
         playerName
@@ -143,24 +148,16 @@ function cancelGame() {
 function copyRoomCode() {
     const roomCode = document.getElementById('display-room-code').textContent;
     navigator.clipboard.writeText(roomCode)
-        .then(() => {
-            showNotification('Room code copied to clipboard!');
-        })
-        .catch(err => {
-            console.error('Failed to copy room code:', err);
-        });
+        .then(() => showNotification('Room code copied to clipboard!'))
+        .catch(err => console.error('Failed to copy room code:', err));
 }
 
 // Copy share URL to clipboard
 function copyShareUrl() {
     const shareUrl = document.getElementById('share-url').value;
     navigator.clipboard.writeText(shareUrl)
-        .then(() => {
-            showNotification('Share URL copied to clipboard!');
-        })
-        .catch(err => {
-            console.error('Failed to copy share URL:', err);
-        });
+        .then(() => showNotification('Share URL copied to clipboard!'))
+        .catch(err => console.error('Failed to copy share URL:', err));
 }
 
 // Show notification
@@ -168,35 +165,64 @@ function showNotification(message, duration = 3000) {
     const notification = document.getElementById('notification');
     notification.textContent = message;
     notification.classList.add('show');
-    
     setTimeout(() => {
         notification.classList.remove('show');
     }, duration);
 }
 
+// Send chat message
+function sendChatMessage() {
+    const chatInput = screens.quiz.classList.contains('active') 
+        ? document.getElementById('chat-input')
+        : document.getElementById('chat-input-waiting');
+    const message = chatInput.value.trim();
+    
+    if (message) {
+        socket.emit('chat-message', {
+            roomCode: currentRoomCode,
+            message,
+            sender: playerName
+        });
+        chatInput.value = '';
+    }
+}
+
+// Display chat message
+function displayChatMessage(data) {
+    const { sender, message, timestamp } = data;
+    const chatMessages = screens.quiz.classList.contains('active') 
+        ? document.getElementById('chat-messages')
+        : document.getElementById('chat-messages-waiting');
+    
+    const messageElement = document.createElement('div');
+    messageElement.className = 'chat-message';
+    messageElement.innerHTML = `
+        <span class="sender">${sender}</span>
+        <span class="timestamp">[${new Date(timestamp).toLocaleTimeString()}]</span>: 
+        ${message}
+    `;
+    chatMessages.appendChild(messageElement);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
 // Submit an answer
 function submitAnswer(answerIndex) {
-    if (selectedAnswer !== null) return; // Already answered
+    if (selectedAnswer !== null) return;
     
     selectedAnswer = answerIndex;
-    
-    // Calculate response time
     const responseTime = (Date.now() - questionStartTime) / 1000;
     
-    // Highlight selected answer
     document.querySelectorAll('.option').forEach((option, index) => {
         if (index === answerIndex) {
             option.classList.add('selected');
         }
     });
     
-    // Send answer to server
     socket.emit('submit-answer', {
         answer: answerIndex,
         responseTime: responseTime
     });
     
-    // Show notification
     showNotification('Answer submitted!');
 }
 
@@ -218,7 +244,6 @@ function updatePlayersList(players) {
         playersList.appendChild(li);
     });
     
-    // Also update live scores if on quiz screen
     updateLiveScores(players);
 }
 
@@ -228,8 +253,6 @@ function updateLiveScores(players) {
     if (!liveScores) return;
     
     liveScores.innerHTML = '';
-    
-    // Sort players by score
     const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
     
     sortedPlayers.forEach(player => {
@@ -238,12 +261,9 @@ function updateLiveScores(players) {
             <span>${player.name}</span>
             <span>${player.score || 0} points</span>
         `;
-        
-        // Highlight current player
         if (player.id === socket.id) {
             li.style.fontWeight = 'bold';
         }
-        
         liveScores.appendChild(li);
     });
 }
@@ -251,30 +271,19 @@ function updateLiveScores(players) {
 // Display a new question
 function displayQuestion(data) {
     const { questionIndex, totalQuestions, question, options, serverTime, timeLimit } = data;
-    
-    // Reset selected answer
     selectedAnswer = null;
-    
-    // Calculate server time offset
     const clientTime = Date.now();
     serverTimeOffset = serverTime - clientTime;
-    
-    // Set question start time
     questionStartTime = clientTime;
     
-    // Update question duration from server if provided
     if (timeLimit) {
         questionDuration = timeLimit;
     }
     
-    // Update question counter
     document.getElementById('current-question').textContent = questionIndex + 1;
     document.getElementById('total-questions').textContent = totalQuestions;
-    
-    // Set question text
     document.getElementById('question-text').textContent = question;
     
-    // Create option buttons
     const optionsContainer = document.getElementById('options-container');
     optionsContainer.innerHTML = '';
     
@@ -286,26 +295,20 @@ function displayQuestion(data) {
         optionsContainer.appendChild(optionElement);
     });
     
-    // Start timer with visual feedback
     startTimer(questionDuration);
-    
-    // Update live scores
     updateLiveScores(allPlayers);
 }
 
 // Start timer with visual feedback
 function startTimer(duration) {
-    // Set initial timer text
     const timerTextElement = document.getElementById('time-left');
     timerTextElement.textContent = duration;
     
-    // Reset timer circle
     const timerProgress = document.getElementById('timer-progress');
-    const circumference = 2 * Math.PI * 15; // 2πr where r=15
+    const circumference = 2 * Math.PI * 15;
     timerProgress.style.strokeDasharray = circumference;
     timerProgress.style.strokeDashoffset = '0';
     
-    // Clear any existing timer
     if (timerInterval) {
         clearInterval(timerInterval);
     }
@@ -314,24 +317,18 @@ function startTimer(duration) {
         clearInterval(currentQuestionTimer);
     }
     
-    // Calculate exact end time based on server time
     const endTime = questionStartTime + (duration * 1000);
     
-    // Function to update timer display
     function updateTimerDisplay() {
         const now = Date.now();
         const remaining = Math.max(0, endTime - now);
         const timeLeft = Math.ceil(remaining / 1000);
         
-        // Force update the timer text
         document.getElementById('time-left').textContent = timeLeft;
-        
-        // Update timer circle
         const progress = 1 - (remaining / (duration * 1000));
         const dashOffset = circumference * progress;
         timerProgress.style.strokeDashoffset = dashOffset;
         
-        // Add warning class when time is running out
         if (timeLeft <= 5) {
             document.getElementById('timer').classList.add('warning');
         } else {
@@ -340,18 +337,13 @@ function startTimer(duration) {
         
         if (timeLeft <= 0) {
             clearInterval(timerInterval);
-            
-            // Auto-submit if no answer selected
             if (selectedAnswer === null) {
-                submitAnswer(-1); // -1 indicates no answer
+                submitAnswer(-1);
             }
         }
     }
     
-    // Initial update
     updateTimerDisplay();
-    
-    // Update timer every 100ms for smoother countdown
     timerInterval = setInterval(updateTimerDisplay, 100);
 }
 
@@ -359,7 +351,6 @@ function startTimer(duration) {
 function showQuestionResults(data) {
     const { correctAnswer, players } = data;
     
-    // Highlight correct and incorrect answers
     document.querySelectorAll('.option').forEach((option, index) => {
         if (index === correctAnswer) {
             option.classList.add('correct');
@@ -368,16 +359,13 @@ function showQuestionResults(data) {
         }
     });
     
-    // Clear timer
     if (timerInterval) {
         clearInterval(timerInterval);
     }
     
-    // Update player scores
     allPlayers = players;
     updateLiveScores(players);
     
-    // Show notification
     if (selectedAnswer === correctAnswer) {
         showNotification('Correct answer! +10 points', 2000);
     } else {
@@ -390,35 +378,27 @@ function showFinalResults(data) {
     const { players } = data;
     allPlayers = players;
     
-    // Display final scores
     const finalScores = document.getElementById('final-scores');
     finalScores.innerHTML = '<h3>Final Scores:</h3>';
     
     players.forEach((player, index) => {
         const playerScore = document.createElement('div');
         playerScore.className = 'player-score';
-        
         if (index === 0) {
             playerScore.classList.add('winner');
         }
-        
-        // Highlight current player
         if (player.id === socket.id) {
             playerScore.style.fontWeight = 'bold';
         }
-        
         playerScore.innerHTML = `
             <span>${index + 1}. ${player.name}</span>
             <span>${player.score} points</span>
         `;
-        
         finalScores.appendChild(playerScore);
     });
     
-    // Show results screen
     showScreen('results');
     
-    // Create confetti effect for winner
     if (players.length > 0 && players[0].id === socket.id) {
         createConfetti();
     }
@@ -427,7 +407,6 @@ function showFinalResults(data) {
 // Create confetti animation
 function createConfetti() {
     const colors = ['#f94144', '#f3722c', '#f8961e', '#f9c74f', '#90be6d', '#43aa8b', '#577590'];
-    
     for (let i = 0; i < 100; i++) {
         const confetti = document.createElement('div');
         confetti.className = 'confetti';
@@ -437,13 +416,8 @@ function createConfetti() {
         confetti.style.height = Math.random() * 10 + 5 + 'px';
         confetti.style.animationDuration = Math.random() * 3 + 2 + 's';
         confetti.style.animationDelay = Math.random() * 2 + 's';
-        
         document.body.appendChild(confetti);
-        
-        // Remove confetti after animation
-        setTimeout(() => {
-            confetti.remove();
-        }, 5000);
+        setTimeout(() => confetti.remove(), 5000);
     }
 }
 
@@ -457,18 +431,12 @@ function generateShareUrl(roomCode) {
 // Socket.io event handlers
 socket.on('connect', () => {
     console.log('Connected to server');
-    
-    // Check if we have a room code in the URL
     const urlParams = new URLSearchParams(window.location.search);
     const roomCode = urlParams.get('room');
-    
     if (roomCode) {
-        // Auto-navigate to join screen
         showScreen('join');
         document.getElementById('room-code').value = roomCode;
     }
-    
-    // Sync time with server
     socket.emit('sync-time');
 });
 
@@ -481,8 +449,6 @@ socket.on('time-sync', (data) => {
 
 socket.on('error', (data) => {
     alert(data.message);
-    
-    // Reset loading state if needed
     document.getElementById('generate-quiz-btn').textContent = 'Generate Quiz';
     document.getElementById('generate-quiz-btn').disabled = false;
 });
@@ -490,43 +456,23 @@ socket.on('error', (data) => {
 socket.on('room-created', (data) => {
     const { roomCode, players } = data;
     currentRoomCode = roomCode;
-    
-    // Display room code
     document.getElementById('display-room-code').textContent = roomCode;
-    
-    // Generate and display share URL
     const shareUrl = generateShareUrl(roomCode);
     document.getElementById('share-url').value = shareUrl;
-    
-    // Update players list
     updatePlayersList(players);
-    
-    // Reset loading state
     document.getElementById('generate-quiz-btn').textContent = 'Generate Quiz';
     document.getElementById('generate-quiz-btn').disabled = false;
-    
-    // Show waiting screen
     showScreen('waiting');
 });
 
 socket.on('room-joined', (data) => {
     const { roomCode, players } = data;
     currentRoomCode = roomCode;
-    
-    // Display room code
     document.getElementById('display-room-code').textContent = roomCode;
-    
-    // Generate and display share URL
     const shareUrl = generateShareUrl(roomCode);
     document.getElementById('share-url').value = shareUrl;
-    
-    // Update players list
     updatePlayersList(players);
-    
-    // Show waiting screen
     showScreen('waiting');
-    
-    // Hide start game button for non-hosts
     document.getElementById('start-game-btn').style.display = 'none';
 });
 
@@ -561,19 +507,20 @@ socket.on('game-cancelled', (data) => {
 });
 
 socket.on('score-update', (data) => {
-    // Update player scores in real-time
     allPlayers = data.players;
     updateLiveScores(data.players);
+});
+
+socket.on('chat-message', (data) => {
+    displayChatMessage(data);
 });
 
 // Check for URL parameters on page load
 window.addEventListener('load', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const roomCode = urlParams.get('room');
-    
     if (roomCode) {
-        // Auto-navigate to join screen
         showScreen('join');
         document.getElementById('room-code').value = roomCode;
     }
-}); 
+});
