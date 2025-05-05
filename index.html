@@ -2,6 +2,175 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Battle</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Quiz Battle</h1>
+            <p class="app-description">A real-time quiz battle game with live text, emoji, voice, and video chat. Create or join a quiz and compete with up to 10 friends!</p>
+        </header>
+        
+        <main>
+            <div id="home-screen" class="screen active">
+                <h2>Welcome to Quiz Battle!</h2>
+                <div class="options">
+                    <button id="create-quiz-btn" class="btn">Create Quiz</button>
+                    <button id="join-quiz-btn" class="btn">Join Quiz</button>
+                </div>
+            </div>
+
+            <div id="create-screen" class="screen">
+                <h2>Create a Quiz</h2>
+                <div class="form-group">
+                    <label for="topic">Topic:</label>
+                    <input type="text" id="topic" placeholder="Enter quiz topic">
+                </div>
+                <div class="form-group">
+                    <label for="num-questions">Number of Questions:</label>
+                    <input type="number" id="num-questions" min="5" max="20" value="10">
+                </div>
+                <button id="generate-quiz-btn" class="btn">Generate Quiz</button>
+                <button class="back-btn btn">Back</button>
+            </div>
+
+            <div id="join-screen" class="screen">
+                <h2>Join a Quiz</h2>
+                <div class="form-group">
+                    <label for="room-code">Room Code:</label>
+                    <input type="text" id="room-code" placeholder="Enter room code">
+                </div>
+                <div class="form-group">
+                    <label for="player-name">Your Name:</label>
+                    <input type="text" id="player-name" placeholder="Enter your name">
+                </div>
+                <button id="join-room-btn" class="btn">Join Room</button>
+                <button class="back-btn btn">Back</button>
+            </div>
+
+            <div id="waiting-screen" class="screen">
+                <h2>Waiting for Players</h2>
+                <div id="room-info">
+                    <p>Room Code: <span id="display-room-code"></span></p>
+                    <button id="copy-code-btn" class="copy-btn">Copy</button>
+                </div>
+                <div class="share-options">
+                    <p>Share this link with friends:</p>
+                </div>
+                <div class="share-url">
+                    <label for="share-url" class="sr-only">Share URL</label>
+                    <input type="text" id="share-url" placeholder="Share URL" readonly>
+                    <button id="copy-url-btn" class="copy-btn">Copy URL</button>
+                </div>
+                <div id="players-list">
+                    <h3>Players:</h3>
+                    <ul id="connected-players"></ul>
+                </div>
+                <div id="video-container" class="video-container"></div>
+                <div class="chat-container">
+                    <h3>Chat</h3>
+                    <div id="chat-messages-waiting" class="chat-messages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chat-input-waiting" placeholder="Type a message...">
+                        <button id="send-chat-waiting" class="chat-send-btn">Send</button>
+                    </div>
+                    <div class="emoji-reactions">
+                        <button class="emoji-btn" data-emoji="😄">😄</button>
+                        <button class="emoji-btn" data-emoji="👍">👍</button>
+                        <button class="emoji-btn" data-emoji="🎉">🎉</button>
+                    </div>
+                    <div class="voice-controls">
+                        <button id="toggle-mic-waiting" class="voice-btn" title="Toggle Microphone">
+                            <i class="fas fa-microphone"></i>
+                        </button>
+                        <button id="toggle-video-waiting" class="voice-btn" title="Toggle Video">
+                            <i class="fas fa-video"></i>
+                        </button>
+                        <button id="mute-all-waiting" class="voice-btn" title="Mute All" style="display: none;">
+                            <i class="fas fa-volume-mute"></i>
+                        </button>
+                    </div>
+                </div>
+                <button id="start-game-btn" class="btn">Start Game</button>
+                <button id="cancel-game-btn" class="btn">Cancel</button>
+            </div>
+
+            <div id="quiz-screen" class="screen">
+                <div id="quiz-header">
+                    <div id="question-counter">Question <span id="current-question">1</span>/<span id="total-questions">10</span></div>
+                    <div id="timer">
+                        Time: 
+                        <div class="timer-circle">
+                            <svg width="40" height="40">
+                                <circle class="timer-background" cx="20" cy="20" r="15" />
+                                <circle id="timer-progress" cx="20" cy="20" r="15" stroke-dasharray="94.2" stroke-dashoffset="0" />
+                            </svg>
+                            <div class="timer-text" id="timer-display"><span id="time-left">30</span>s</div>
+                        </div>
+                    </div>
+                </div>
+                <div id="question-container">
+                    <h2 id="question-text">Question text will appear here</h2>
+                    <div id="options-container"></div>
+                </div>
+                <div class="live-scores">
+                    <h3>Live Scores</h3>
+                    <ul id="live-player-scores"></ul>
+                </div>
+                <div id="video-container" class="video-container"></div>
+                <div class="chat-container">
+                    <h3>Chat</h3>
+                    <div id="chat-messages" class="chat-messages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chat-input" placeholder="Type a message...">
+                        <button id="send-chat" class="chat-send-btn">Send</button>
+                    </div>
+                    <div class="emoji-reactions">
+                        <button class="emoji-btn" data-emoji="😄">😄</button>
+                        <button class="emoji-btn" data-emoji="👍">👍</button>
+                        <button class="emoji-btn" data-emoji="🎉">🎉</button>
+                    </div>
+                    <div class="voice-controls">
+                        <button id="toggle-mic" class="voice-btn" title="Toggle Microphone">
+                            <i class="fas fa-microphone"></i>
+                        </button>
+                        <button id="toggle-video" class="voice-btn" title="Toggle Video">
+                            <i class="fas fa-video"></i>
+                        </button>
+                        <button id="mute-all" class="voice-btn" title="Mute All" style="display: none;">
+                            <i class="fas fa-volume-mute"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="results-screen" class="screen">
+                <h2>Quiz Results</h2>
+                <div id="final-scores"></div>
+                <button id="play-again-btn" class="btn">Play Again</button>
+                <button id="home-btn" class="btn">Home</button>
+            </div>
+        </main>
+        
+        <footer>
+            <p>© 2025 by Team Alpha. All rights reserved.</p>
+            <p>Visit our main website: <a href="https://smartQai.vercel.app" target="_blank" rel="noopener">smartQai.vercel.app</a></p>
+        </footer>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0mu4tTBqT0e5yDq6zO0p">
     <title>Quiz Battle</title>
     <link rel="stylesheet" href="styles.css">
@@ -133,3 +302,4 @@
     <script src="script.js"></script>
 </body>
 </html>
+ -->
