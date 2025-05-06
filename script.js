@@ -148,7 +148,11 @@ function onYouTubeIframeAPIReady() {
         height: '0',
         width: '0',
         events: {
-            'onReady': () => {}
+            'onReady': () => {},
+            'onError': (error) => {
+                console.error('YouTube player error:', error);
+                showNotification('Failed to play song. Please try another.', 5000);
+            }
         }
     });
 }
@@ -165,7 +169,6 @@ function showScreen(screenName) {
     if (timerInterval) {
         clearInterval(timerInterval);
     }
-    // Clear chat messages and video feeds when leaving quiz or waiting screen
     if (screenName !== 'quiz' && screenName !== 'waiting') {
         document.getElementById('chat-messages').innerHTML = '';
         document.getElementById('chat-messages-waiting').innerHTML = '';
@@ -177,15 +180,12 @@ function showScreen(screenName) {
             youtubePlayer.stopVideo();
         }
     } else {
-        // Show/hide mute-all button for host
         muteAllButtons.forEach(btn => {
             btn.style.display = isHost ? 'inline-block' : 'none';
         });
-        // Show/hide music controls for host
         document.querySelectorAll('.music-controls').forEach(container => {
             container.style.display = isHost ? 'block' : 'none';
         });
-        // Initialize local video feed if media is active
         if (isMicOn || isVideoOn) {
             setupLocalVideo();
         }
@@ -396,6 +396,9 @@ function playSong(song) {
         document.querySelectorAll('.current-song').forEach(el => {
             el.textContent = `Now Playing: ${song.title}`;
         });
+    } else {
+        console.error('Invalid YouTube URL or player not ready:', song.url);
+        showNotification('Invalid song URL. Please try another.', 5000);
     }
 }
 
@@ -418,7 +421,11 @@ async function startMediaChat() {
             return;
         }
 
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: { width: { ideal: 640 }, height: { ideal: 480 } }
+        });
+        console.log('Local stream acquired:', localStream.id);
         isMicOn = true;
         isVideoOn = true;
         updateMicButton();
@@ -433,21 +440,32 @@ async function startMediaChat() {
         socket.emit('start-media-chat', { roomCode: currentRoomCode });
         showNotification('Voice and video chat started!');
     } catch (err) {
-        showNotification('Failed to access microphone or camera. Please check permissions.', 5000);
+        console.error('Failed to access media devices:', err);
+        let message = 'Failed to access microphone or camera. Please check permissions.';
+        if (err.name === 'NotAllowedError') {
+            message = 'Camera/microphone access denied. Please allow access in browser settings.';
+        } else if (err.name === 'NotFoundError') {
+            message = 'No camera or microphone found. Please connect a device.';
+        }
+        showNotification(message, 5000);
         try {
             localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            console.log('Fallback to audio-only stream:', localStream.id);
             isMicOn = true;
+            isVideoOn = false;
             updateMicButton();
+            updateVideoButton();
             socket.emit('media-status', {
                 roomCode: currentRoomCode,
                 isSpeaking: isMicOn,
-                isVideoOn: false,
+                isVideoOn: isVideoOn,
                 isMuted: false
             });
             socket.emit('start-media-chat', { roomCode: currentRoomCode });
             showNotification('Voice chat started (video unavailable).');
         } catch (audioErr) {
-            showNotification('Failed to access microphone. Please check permissions.', 5000);
+            console.error('Failed to access audio:', audioErr);
+            showNotification('Failed to start voice or video chat.', 5000);
         }
     }
 }
@@ -456,6 +474,7 @@ function stopMediaChat() {
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
+        console.log('Local stream stopped');
     }
     isMicOn = false;
     isVideoOn = false;
@@ -528,7 +547,9 @@ async function toggleVideo() {
         });
     } else if (isMicOn) {
         try {
-            const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const videoStream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 640 }, height: { ideal: 480 } }
+            });
             videoStream.getVideoTracks().forEach(track => localStream.addTrack(track));
             isVideoOn = true;
             updateVideoButton();
@@ -546,7 +567,8 @@ async function toggleVideo() {
             });
             showNotification('Video started.');
         } catch (err) {
-            showNotification('Failed to access camera.', 5000);
+            console.error('Failed to access camera:', err);
+            showNotification('Failed to access camera. Please check permissions.', 5000);
         }
     }
 }
@@ -594,17 +616,28 @@ function setupLocalVideo() {
             video.srcObject = localStream;
             video.autoplay = true;
             video.muted = true;
+            video.playsInline = true;
+            video.onerror = () => {
+                console.error(`Local video playback error for ${socket.id}`);
+                showNotification('Failed to display local video.', 5000);
+            };
             const nameLabel = document.createElement('div');
             nameLabel.className = 'player-name';
             nameLabel.textContent = playerName;
             localFeed.appendChild(video);
             localFeed.appendChild(nameLabel);
             container.appendChild(localFeed);
+            console.log(`Local video feed added for ${playerName}`);
         }
     });
 }
 
 async function createPeerConnection(playerId) {
+    if (peerConnections[playerId]) {
+        console.log(`Peer connection for ${playerId} already exists`);
+        return peerConnections[playerId];
+    }
+
     try {
         const pc = new RTCPeerConnection(configuration);
         peerConnections[playerId] = pc;
@@ -612,18 +645,24 @@ async function createPeerConnection(playerId) {
         if (localStream) {
             localStream.getTracks().forEach(track => {
                 pc.addTrack(track, localStream);
+                console.log(`Added track to peer connection for ${playerId}: ${track.kind}`);
             });
         }
 
         pc.ontrack = (event) => {
             const stream = event.streams[0];
+            console.log(`Received remote stream from ${playerId}: ${stream.id}`);
             if (event.track.kind === 'audio') {
-                const audio = document.createElement('audio');
-                audio.id = `audio-${playerId}`;
-                audio.srcObject = stream;
-                audio.autoplay = true;
-                audio.muted = false;
-                document.body.appendChild(audio);
+                let audio = document.getElementById(`audio-${playerId}`);
+                if (!audio) {
+                    audio = document.createElement('audio');
+                    audio.id = `audio-${playerId}`;
+                    audio.srcObject = stream;
+                    audio.autoplay = true;
+                    audio.muted = false;
+                    document.body.appendChild(audio);
+                    console.log(`Added audio element for ${playerId}`);
+                }
             } else if (event.track.kind === 'video') {
                 document.querySelectorAll('.video-container').forEach(container => {
                     let videoFeed = container.querySelector(`#video-feed-${playerId}`);
@@ -634,12 +673,18 @@ async function createPeerConnection(playerId) {
                         const video = document.createElement('video');
                         video.srcObject = stream;
                         video.autoplay = true;
+                        video.playsInline = true;
+                        video.onerror = () => {
+                            console.error(`Remote video playback error for ${playerId}`);
+                            showNotification(`Failed to display video for ${allPlayers.find(p => p.id === playerId)?.name || 'Unknown'}.`, 5000);
+                        };
                         const nameLabel = document.createElement('div');
                         nameLabel.className = 'player-name';
                         nameLabel.textContent = allPlayers.find(p => p.id === playerId)?.name || 'Unknown';
                         videoFeed.appendChild(video);
                         videoFeed.appendChild(nameLabel);
                         container.appendChild(videoFeed);
+                        console.log(`Added video feed for ${playerId}`);
                     }
                 });
             }
@@ -652,12 +697,32 @@ async function createPeerConnection(playerId) {
                     candidate: event.candidate,
                     to: playerId
                 });
+                console.log(`Sent ICE candidate to ${playerId}`);
             }
         };
 
         pc.onconnectionstatechange = () => {
+            console.log(`Peer connection state for ${playerId}: ${pc.connectionState}`);
             if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-                showNotification('Voice/video chat connection failed. Using text chat instead.', 5000);
+                console.warn(`Peer connection to ${playerId} failed or disconnected`);
+                pc.close();
+                delete peerConnections[playerId];
+                const audio = document.getElementById(`audio-${playerId}`);
+                const videoFeed = document.getElementById(`video-feed-${playerId}`);
+                if (audio) audio.remove();
+                if (videoFeed) videoFeed.remove();
+                showNotification('Video call connection lost. Trying to reconnect...', 5000);
+                setTimeout(() => createPeerConnection(playerId), 2000);
+            } else if (pc.connectionState === 'connected') {
+                console.log(`Peer connection to ${playerId} established`);
+            }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            console.log(`ICE connection state for ${playerId}: ${pc.iceConnectionState}`);
+            if (pc.iceConnectionState === 'failed') {
+                pc.restartIce();
+                console.log(`Restarting ICE for ${playerId}`);
             }
         };
 
@@ -668,8 +733,11 @@ async function createPeerConnection(playerId) {
             offer,
             to: playerId
         });
+        console.log(`Sent offer to ${playerId}`);
+        return pc;
     } catch (err) {
-        showNotification('Failed to establish voice/video chat connection.', 5000);
+        console.error(`Failed to create peer connection for ${playerId}:`, err);
+        showNotification('Failed to establish video chat connection.', 5000);
     }
 }
 
@@ -910,6 +978,7 @@ socket.on('room-created', (data) => {
     document.getElementById('generate-quiz-btn').textContent = 'Generate Quiz';
     document.getElementById('generate-quiz-btn').disabled = false;
     showScreen('waiting');
+    startMediaChat();
 });
 
 socket.on('room-joined', (data) => {
@@ -925,6 +994,7 @@ socket.on('room-joined', (data) => {
     if (currentSong) {
         playSong(currentSong);
     }
+    startMediaChat();
 });
 
 socket.on('player-joined', async (data) => {
@@ -933,6 +1003,7 @@ socket.on('player-joined', async (data) => {
     if (isMicOn || isVideoOn) {
         const newPlayer = data.players.find(p => !peerConnections[p.id] && p.id !== socket.id);
         if (newPlayer) {
+            console.log(`Host initiating peer connection for new player: ${newPlayer.id}`);
             await createPeerConnection(newPlayer.id);
         }
     }
@@ -955,25 +1026,32 @@ socket.on('player-left', (data) => {
 socket.on('start-media-chat', async (data) => {
     const { from } = data;
     if (!peerConnections[from] && from !== socket.id) {
+        console.log(`Creating peer connection for ${from} on start-media-chat`);
         await createPeerConnection(from);
     }
 });
 
 socket.on('offer', async (data) => {
     const { offer, from } = data;
-    if (!peerConnections[from]) {
-        const pc = new RTCPeerConnection(configuration);
+    let pc = peerConnections[from];
+    if (!pc) {
+        pc = new RTCPeerConnection(configuration);
         peerConnections[from] = pc;
 
         pc.ontrack = (event) => {
             const stream = event.streams[0];
+            console.log(`Received remote stream from ${from}: ${stream.id}`);
             if (event.track.kind === 'audio') {
-                const audio = document.createElement('audio');
-                audio.id = `audio-${from}`;
-                audio.srcObject = stream;
-                audio.autoplay = true;
-                audio.muted = false;
-                document.body.appendChild(audio);
+                let audio = document.getElementById(`audio-${from}`);
+                if (!audio) {
+                    audio = document.createElement('audio');
+                    audio.id = `audio-${from}`;
+                    audio.srcObject = stream;
+                    audio.autoplay = true;
+                    audio.muted = false;
+                    document.body.appendChild(audio);
+                    console.log(`Added audio element for ${from}`);
+                }
             } else if (event.track.kind === 'video') {
                 document.querySelectorAll('.video-container').forEach(container => {
                     let videoFeed = container.querySelector(`#video-feed-${from}`);
@@ -984,12 +1062,18 @@ socket.on('offer', async (data) => {
                         const video = document.createElement('video');
                         video.srcObject = stream;
                         video.autoplay = true;
+                        video.playsInline = true;
+                        video.onerror = () => {
+                            console.error(`Remote video playback error for ${from}`);
+                            showNotification(`Failed to display video for ${allPlayers.find(p => p.id === from)?.name || 'Unknown'}.`, 5000);
+                        };
                         const nameLabel = document.createElement('div');
                         nameLabel.className = 'player-name';
                         nameLabel.textContent = allPlayers.find(p => p.id === from)?.name || 'Unknown';
                         videoFeed.appendChild(video);
                         videoFeed.appendChild(nameLabel);
                         container.appendChild(videoFeed);
+                        console.log(`Added video feed for ${from}`);
                     }
                 });
             }
@@ -1002,27 +1086,56 @@ socket.on('offer', async (data) => {
                     candidate: event.candidate,
                     to: from
                 });
+                console.log(`Sent ICE candidate to ${from}`);
             }
         };
 
         pc.onconnectionstatechange = () => {
+            console.log(`Peer connection state for ${from}: ${pc.connectionState}`);
             if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-                showNotification('Voice/video chat connection failed. Using text chat instead.', 5000);
+                console.warn(`Peer connection to ${from} failed or disconnected`);
+                pc.close();
+                delete peerConnections[from];
+                const audio = document.getElementById(`audio-${from}`);
+                const videoFeed = document.getElementById(`video-feed-${from}`);
+                if (audio) audio.remove();
+                if (videoFeed) videoFeed.remove();
+                showNotification('Video call connection lost. Trying to reconnect...', 5000);
+                setTimeout(() => createPeerConnection(from), 2000);
+            } else if (pc.connectionState === 'connected') {
+                console.log(`Peer connection to ${from} established`);
             }
         };
 
-        try {
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            socket.emit('answer', {
-                roomCode: currentRoomCode,
-                answer,
-                to: from
+        pc.oniceconnectionstatechange = () => {
+            console.log(`ICE connection state for ${from}: ${pc.iceConnectionState}`);
+            if (pc.iceConnectionState === 'failed') {
+                pc.restartIce();
+                console.log(`Restarting ICE for ${from}`);
+            }
+        };
+
+        if (localStream) {
+            localStream.getTracks().forEach(track => {
+                pc.addTrack(track, localStream);
+                console.log(`Added track to peer connection for ${from}: ${track.kind}`);
             });
-        } catch (err) {
-            showNotification('Failed to connect voice/video chat.', 5000);
         }
+    }
+
+    try {
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('answer', {
+            roomCode: currentRoomCode,
+            answer,
+            to: from
+        });
+        console.log(`Handled offer from ${from} and sent answer`);
+    } catch (err) {
+        console.error(`Failed to handle offer from ${from}:`, err);
+        showNotification('Failed to connect video chat.', 5000);
     }
 });
 
@@ -1032,8 +1145,10 @@ socket.on('answer', async (data) => {
     if (pc && pc.signalingState !== 'closed') {
         try {
             await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            console.log(`Set answer from ${from}`);
         } catch (err) {
-            showNotification('Failed to connect voice/video chat.', 5000);
+            console.error(`Failed to set answer from ${from}:`, err);
+            showNotification('Failed to connect video chat.', 5000);
         }
     }
 });
@@ -1044,8 +1159,10 @@ socket.on('ice-candidate', async (data) => {
     if (pc && pc.signalingState !== 'closed') {
         try {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            console.log(`Added ICE candidate from ${from}`);
         } catch (err) {
-            showNotification('Failed to connect voice/video chat.', 5000);
+            console.error(`Failed to add ICE candidate from ${from}:`, err);
+            showNotification('Failed to connect video chat.', 5000);
         }
     }
 });
