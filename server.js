@@ -28,7 +28,7 @@ function generateRoomCode() {
 // Generate quiz questions using Gemini API
 async function generateQuizQuestions(topic, numQuestions) {
     try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
         const prompt = `Create a multiple-choice quiz about "${topic}" with ${numQuestions} questions. 
         For each question, provide 4 options with only one correct answer. 
         Format the response as a JSON array of objects, where each object has:
